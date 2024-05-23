@@ -1,0 +1,66 @@
+---
+- name: Access Azure Key Vault from VM using Managed Identity without CLI
+  hosts: localhost
+  vars:
+    key_vault_name: "testCourse"
+    secret_name: "mysqlPassword"
+  tasks:
+    - name: Get Access Token for Managed Identity
+      uri:
+        url: "http://169.254.169.254/metadata/identity/oauth2/token?resource=https://vault.azure.net&api-version=2018-02-01"
+        method: GET
+        headers:
+          Metadata: "true"
+        return_content: yes
+        status_code: 200
+      register: imds_token
+
+    - name: Retrieve a secret from Azure Key Vault
+      uri:
+        url: "https://{{ key_vault_name }}.vault.azure.net/secrets/{{ secret_name }}?api-version=7.0"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ imds_token.json.access_token }}"
+      register: mysql_password
+
+    - name: Display MySQL password
+      debug:
+        msg: "MySQL password is {{ mysql_password.json.value }}"
+
+    - name: Install Python dependencies
+      pip:
+        name:
+          - flask
+          - mysql-connector-python
+        state: present
+
+    - name: Deploy Python API
+      copy:
+        content: |
+          from flask import Flask
+          import mysql.connector
+
+          app = Flask(__name__)
+
+          @app.route('/')
+          def hello():
+              db = mysql.connector.connect(
+                  host="localhost",
+                  user="root",
+                  password="{{ mysql_password.json.value }}",
+                  database="mydatabase"
+              )
+              cursor = db.cursor()
+              cursor.execute("SELECT 'Hello, World!'")
+              result = cursor.fetchone()
+              return result[0]
+
+          if __name__ == '__main__':
+              app.run(host='0.0.0.0')
+        dest: /var/app.py
+
+    - name: Start Python API
+      shell: |
+        FLASK_APP=/var/app.py flask run --host=0.0.0.0 --port=80
+      args:
+        creates: /tmp/flask_running
