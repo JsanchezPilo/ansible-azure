@@ -2,7 +2,7 @@
 - name: Access Azure Key Vault from VM using Managed Identity without CLI
   hosts: localhost
   vars:
-    key_vault_name: "testCourse"
+    key_vault_name: "azureAnsible1"
     secret_name: "mysqlPassword"
   tasks:
     - name: Get Access Token for Managed Identity
